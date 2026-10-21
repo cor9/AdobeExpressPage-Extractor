@@ -1,151 +1,160 @@
-# Adobe Express Page Extractor
+# Adobe Express page extractor
 
-An archival tool that takes a public Adobe Express (Spark) page and turns it into a small, version-controlled JSON specification, plus local copies of its images and styling. This allows you to re-render the original page very closely in React without depending on Adobe's servers. It is ideal for preserving legacy content, restoring archived pages, or migrating off the platform.
+An internal archival tool for Child Actor 101. It takes a **public Adobe Express (Spark) page**
+and turns it into a small, version-controlled description of that page (a *spec*), plus local copies of
+its images and styling, so the site can re-render the original page very closely in React without
+depending on Adobe. It is how the **NO EXCUSES!** and **The Perfect Self Tape** courses (17 pages)
+were restored. Keep it: other surviving Adobe pages can be archived the same way.
 
----
+## 1. What it does
 
-## 1. What It Does
+For one page it records, in original order:
 
-For a given page, it records the following in original order:
-
-* **Headings, paragraphs, lists, and quotes** (preserving inline bold, italic, and links), buttons, and links.
-* **Images** with their display sizing, captions, and the copy Adobe stores in a figure's `aria-label`.
-* **Video embeds** in their exact positions (see [§6. Video Handling](#6-video-handling)).
-* **Section types**: single column, full-width photo, split layout, window band, full-screen photo, photo grid, card flip-book, spacers, title section (background photo + title), and author/credits.
-* **Theme styling**: the page's theme CSS (re-scoped so pages cannot collide), the Adobe Fonts it uses, and any assets its theme references.
-* **Internal linking**: links to other archived pages, rewritten to local routes via `page_routes.py`.
+- headings, paragraphs, lists, quotes (with inline bold/italic/links), buttons and links
+- images with their display sizing, captions, and the copy Adobe stores in a figure's `aria-label`
+- video embeds in their exact positions (see §6)
+- section types: single column, full-width photo, split layout, window band, full-screen photo, photo
+  grid, card flip-book, spacers, title section (background photo + title), author/credits
+- the page's **theme CSS** (re-scoped so pages cannot collide), the **Adobe Fonts** it uses, and any
+  assets its theme references
+- links to other archived pages, rewritten to local routes (`page_routes.py`)
 
 The live page's markup is the source of truth. Nothing is rewritten or "improved".
-
----
 
 ## 2. Input
 
 A public page URL on either Adobe host:
-* `https://express.adobe.com/page/<ID>/` (classic Spark pages)
-* `https://new.express.adobe.com/webpage/<ID>` (newer Adobe Express webpages)
 
-You also specify a category/collection folder name and a slug (use `index` for a hub/landing page).
+- `https://express.adobe.com/page/<ID>/` (classic Spark pages)
+- `https://new.express.adobe.com/webpage/<ID>` (newer Adobe Express webpages)
 
-**Prerequisites:** Python 3 (standard library only; no pip dependencies required). It downloads the page directly, or you can supply `--html FILE` to parse a saved local copy.
+plus a **course** name (the folder and the `/courses/<course>/` route) and a **slug** (the page name;
+use `index` for a course's hub page, served at `/courses/<course>`). Python 3, standard library only.
+It downloads the page itself; `--html FILE` uses a saved copy instead.
 
----
+## 3. Run it
 
-## 3. Usage
+From the repository root:
 
-Run from the repository root:
+```bash
+python3 scripts/adobe-extractor/adobe_page_to_spec.py \
+  https://express.adobe.com/page/<ID>/ my-course my-page
+```
 
-`python3 scripts/adobe-extractor/adobe_page_to_spec.py \
-  https://express.adobe.com/page/<ID>/ <category> <slug>`
+Options: `--image-size 2560` (default; max pixel width of stored images, Adobe resizes server-side) or
+`--image-size orig` for original files, and `--html FILE`. To re-archive every page listed in
+`manifest.json`: `python3 scripts/adobe-extractor/adobe_page_to_spec.py --manifest scripts/adobe-extractor/manifest.json`.
+Re-running is safe: images already stored are skipped and outputs are deterministic. Record each new page in
+`manifest.json` and add its Adobe page id to `page_routes.py` (so sibling pages link to it locally).
 
-### CLI Options
+Then add the route (one small file per page; copy any `src/app/courses/<course>/<slug>/page.tsx`):
 
-* `--image-size 2560`: (Default) Maximum pixel width of stored images (Adobe resizes server-side). Use `--image-size orig` to pull raw original files.
-* `--html FILE`: Extract from a local `.html` file instead of fetching over the network.
-* `--manifest FILE`: Re-archive every page listed in a manifest file (e.g., `python3 scripts/adobe-extractor/adobe_page_to_spec.py --manifest scripts/adobe-extractor/manifest.json`).
-
-> **Note:** Re-running the extractor is idempotent: images already downloaded locally are skipped, and spec output is deterministic. Record each page in `manifest.json` and add its Adobe page ID to `page_routes.py` so sibling pages link to each other locally.
-
-### Adding the Route to React / Next.js
-
-Add a route component for each extracted page (e.g., `src/app/<category>/<slug>/page.tsx`):
-
-`import "@/content/adobe/<category>/<slug>.theme.css"; // Always import scoped theme CSS first
+```tsx
+import "@/content/adobe/<course>/<slug>.theme.css";            // import the theme CSS first
 import { AdobePage } from "@/components/adobe/AdobePage";
 import type { AdobePageSpec } from "@/components/adobe/AdobePage";
-import spec from "@/content/adobe/<category>/<slug>.json";
+import spec from "@/content/adobe/<course>/<slug>.json";
+export default function Page() { return <AdobePage spec={spec as AdobePageSpec} />; }
+```
 
-export default function Page() {
-  return <AdobePage spec={spec as AdobePageSpec} />;
-}`
+(Optionally add `AdobeCourseNav` for previous/next links; see the existing course pages.)
 
----
+## 4. What it produces
 
-## 4. What It Produces
+| Output | Purpose |
+|---|---|
+| `src/content/adobe/<course>/<slug>.json` | the ordered page spec |
+| `src/content/adobe/<course>/<slug>.theme.css` | the page's theme CSS, scoped to `.adobe-theme-<course>-<slug>` |
+| `public/courses/<course>/<slug>/images/*` | every image on the page |
+| `public/courses/<course>/<slug>/theme/*` | assets referenced by the theme CSS (only for built-in themes) |
 
-| Output Path | Purpose |
-| :--- | :--- |
-| `src/content/adobe/<category>/<slug>.json` | The ordered page JSON specification |
-| `src/content/adobe/<category>/<slug>.theme.css` | Scoped theme CSS (`.adobe-theme-<category>-<slug>`) |
-| `public/<category>/<slug>/images/*` | Every image downloaded locally from the page |
-| `public/<category>/<slug>/theme/*` | Local assets referenced by built-in themes |
+Spec shape: `{ source, theme, fontKits[], title, sections[], author?, credits?, runtime }`.
+`sections[]` items have a `kind` (`single-column`, `full-width`, `split`, `window`, `fullscreen`,
+`photo-grid`, `flipbook`, `spacer`), the original `classes`, and `elements[]`. Element types: `h2/h3/h4/p/
+blockquote` (inline HTML), `ul/ol`, `button`, `image`, `video`, and `raw` (a safe fallback for anything the
+extractor does not recognise; nothing is silently dropped). The TypeScript types are in
+`src/components/adobe/AdobePage.tsx`.
 
-### Spec Shape
+## 5. How the site renders it
 
-`{
-  source: string;
-  theme: string;
-  fontKits: string[];
-  title: string;
-  sections: AdobeSection[];
-  author?: string;
-  credits?: string;
-  runtime: "classic" | "new";
-}`
+- `src/components/adobe/AdobePage.tsx` turns a spec into markup that mirrors Adobe's own DOM
+  (`.section > .section-view > .section-content > .content-container`, `.image`, `.link-button-wrapper`, ...), so the
+  page's theme CSS applies unchanged. It also links the page's Adobe Fonts kits.
+- `src/components/adobe/adobe-layout.css` reproduces the parts of Adobe's runtime layout that the original page got
+  from Adobe's JavaScript/runtime stylesheet (section stacking, split layout, photo-grid tile positions, ...). It
+  is deliberately written at the same low specificity as Adobe's runtime so each page's theme wins, as on the original.
+- `RevealOnScroll.tsx` re-creates the scroll fade-in; `AdobeCourseNav.tsx` is the previous/next bar.
+- Pages with an older Adobe runtime (1.22) scale inline images to the column; newer ones (1.23+, Adobe Express webpages)
+  show them at their loaded size. The extractor records `runtime: "classic" | "new"` and `displayWidth` accordingly.
 
-* **`sections[]`** items contain: `kind` (`single-column`, `full-width`, `split`, `window`, `fullscreen`, `photo-grid`, `flipbook`, `spacer`), original class names, and `elements[]`.
-* **`elements[]`** items contain: `h2`, `h3`, `h4`, `p`, `blockquote` (inline HTML preserved), `ul`, `ol`, `button`, `image`, `video`, and `raw` (a safe fallback container for unrecognized nodes so nothing is silently dropped).
+## 6. Video handling
 
-TypeScript types can be referenced in `src/components/adobe/AdobePage.tsx`.
+The original pages embedded Vimeo videos, which Corey migrated to Bunny Stream (library `712901`, see
+`src/lib/bunny.ts`). `video_map.py` is the single place that decides what each Vimeo id becomes:
 
----
+- **Mapped to Bunny** (`bunny(guid, title)`): rendered as the Bunny player. `review=True` marks a
+  medium-confidence match worth double-checking.
+- **Third-party** (`external_vimeo(...)` for a still-live Vimeo video, `youtube(id, title)` for a Vimeo embed replaced by a YouTube video, and any YouTube embed): the original
+  embed is preserved as-is.
+- **Unresolved** (`missing(...)`, or any Vimeo id not in the map; none remain in the 17 current pages): a neutral gray "Video coming soon" box in the exact
+  original position, with the legacy Vimeo id kept in the spec and `data-legacy-vimeo` on the element.
+  Placeholders have an anchor: `/courses/<course>/<slug>#video-N` jumps to the Nth video on the page.
 
-## 5. How It Renders
+To fill a placeholder: replace its `missing(...)` entry with `bunny("<guid>", "<title>")` in `video_map.py` and
+re-run the extractor for the pages containing it. Nothing is guessed; unknown videos stay placeholders. `vimeo_library.csv` is an export of Corey's Vimeo library
+(id, title, duration); match a legacy id's Vimeo title to the Bunny title before mapping it, and check durations when titles are generic.
 
-* **`AdobePage.tsx`**: Translates the JSON spec into markup mirroring Adobe's DOM hierarchy (`.section > .section-view > .section-content > .content-container`, `.image`, `.link-button-wrapper`, etc.) so the extracted theme CSS styles the elements identically. Dynamically injects Adobe Fonts kits.
-* **`adobe-layout.css`**: Reproduces Adobe's structural runtime layouts (section stacking, split columns, photo-grid matrices). Built using `:where(.adobe-page)` to maintain minimal CSS specificity so theme styles always take precedence.
-* **`RevealOnScroll.tsx`**: Optional lightweight helper replicating Adobe's viewport scroll fade-ins.
-* **Runtime Quirks**: Older Spark pages (runtime 1.22) scale inline photos to match column width; modern pages (runtime 1.23+) preserve native aspect ratios. The extractor tags `runtime: "classic" | "new"` and sets `displayWidth` to ensure 1:1 visual fidelity.
+## 7. Network access needed
 
----
+Only when extracting (the finished site serves everything locally except fonts and videos):
 
-## 6. Video Handling
+- `express.adobe.com`, `new.express.adobe.com` (the pages and their images)
+- `page.adobespark-assets.com` (runtime/theme CSS and font scripts for classic pages)
+- `use.typekit.net` (Adobe Fonts kit CSS and font files, also loaded by the site at runtime)
 
-Use `video_map.py` to route embedded video IDs:
+At runtime the site additionally embeds `iframe.mediadelivery.net` (Bunny), `www.youtube.com` and
+`player.vimeo.com`. In a locked-down environment these hosts must be allowed or the checks cannot see them.
 
-* **Remapped:** Assign legacy IDs to an alternate CDN or custom player.
-* **Third-Party:** Retains original embeds (e.g., standard YouTube or Vimeo URLs).
-* **Unresolved / Placeholders:** Unmapped IDs generate an accessible placeholder container (`data-legacy-video="<id>"`) with deep-link anchors (`/<category>/<slug>#video-N`).
+## 8. Known limitations
 
----
+- It archives what the public page serves. It does not render the page in a browser; behaviour Adobe produces with
+  JavaScript is re-implemented by hand in `adobe-layout.css` / `AdobePage.tsx`.
+- **Card flip-book** sections (cards that advance over a pinned photo as you scroll) are rendered as one full-screen
+  band per card, in order, not as a scroll-driven animation. **Photo grids** are static (no lightbox);
+  **images** open no large-preview viewer. Adobe's footer ("Appreciate", Terms, Report Abuse) is intentionally dropped.
+- Section types it has not seen (pull quotes, glideshows, other layouts) are skipped at the section level; unknown
+  *elements* inside known sections are kept as `raw`. Run `checks/compare-to-live.cjs` to find out.
+- Themes depend on Adobe Fonts kits that Adobe can change or retire; the site links them rather than storing font files.
+- Copy that Adobe stored only as image text (common on newer Express pages) stays image text.
+- Mobile layout comes from the page's own theme CSS (plus the split-layout stacking rules); it has been compared with the
+  originals only for overflow, not measured at phone width.
 
-## 7. Network Requirements
+## 9. Adding support for a new section or layout type
 
-**During Extraction Only:**
-* `express.adobe.com` / `new.express.adobe.com` (scraping pages and downloading images)
-* `page.adobespark-assets.com` (runtime stylesheets and theme assets)
-* `use.typekit.net` (Adobe Typekit font kit bundles)
+1. **Find it.** Re-run the extractor and open the page. Compare with the original using
+   `node scripts/adobe-extractor/checks/compare-to-live.cjs <live-url> <local-url>`; missing or mis-sized content points at it.
+   In the original page's HTML, the section is a `div.section.<kind>-section` inside `div.article`.
+2. **Extract it.** In `adobe_page_to_spec.py`, add a branch in `PageExtractor.parse_sections` (and a small
+   helper like `_photo_grid_section`) that records the section's `kind`, `classes`, and its content in the spec. Use
+   `elements_in(container)` for ordinary content, `background(section)` for a background photo, and `fetch_image` for any
+   image so it is stored locally.
+3. **Render it.** In `AdobePage.tsx`, add the kind to the `AdobeSection` type and a branch in the section loop that
+   emits Adobe's own class names. If the original relied on Adobe's runtime for layout, copy the relevant rules from the
+   page's runtime stylesheet (`<runtime>/runtime.gz.css`, linked in the page's `<head>`) into `adobe-layout.css`, wrapped in
+   `:where(.adobe-page)` so they stay lower-specificity than page themes.
+4. **Verify.** Run `compare-to-live.cjs` (aim for `element diffs: 0`), `checks/verify-pages.cjs <base-url>`, and `npm run build`.
 
-**At Runtime:** The site serves all HTML, JSON, CSS, and images locally. External network requests are only made for Adobe Typekit web fonts and any embedded third-party video iframes.
+## Files
 
----
+| File | Role |
+|---|---|
+| `adobe_page_to_spec.py` | the extractor |
+| `video_map.py` | Vimeo id -> Bunny / third-party / placeholder |
+| `vimeo_library.csv` | Vimeo id -> original title/duration, for confirming Bunny matches |
+| `page_routes.py` | Adobe page id -> local route (internal links) |
+| `manifest.json` | pages archived so far (re-run them all with `--manifest`) |
+| `checks/compare-to-live.cjs` | measure a recreated page against the live original |
+| `checks/verify-pages.cjs` | browser smoke test of every archived page (images, console, overflow, embeds) |
 
-## 8. Known Limitations
-
-* **Static Scraping:** Parses server-rendered and public DOM snapshots; client-side JS behaviors are recreated statically or via React components.
-* **Flip-books:** Card flip-book sections are extracted as sequential full-screen bands rather than scroll-pinned canvas animations.
-* **Photo Grids:** Grids render responsive CSS tiles; modal lightbox viewer is not included by default.
-* **Footers:** Adobe platform footers (*Appreciate*, *Report Abuse*) are omitted.
-* **Baked-In Typography:** Headings or typography baked directly into raster image assets on newer Express templates remain raster images.
-
----
-
-## 9. Adding New Section or Layout Types
-
-1. **Inspect:** Run `node scripts/adobe-extractor/checks/compare-to-live.cjs <live-url> <local-url>` to spot discrepancies. Identify target DOM classes in the original markup (e.g., `div.section.<kind>-section`).
-2. **Extract:** Add a parsing branch to `PageExtractor.parse_sections` in `adobe_page_to_spec.py`. Utilize `elements_in()` for body content and `fetch_image()` for local downloads.
-3. **Render:** Add the section key to `AdobeSection` in `AdobePage.tsx` and render its corresponding DOM structure. Add layout scaffolding rules to `adobe-layout.css` within `:where(.adobe-page)`.
-4. **Verify:** Check diffs via `compare-to-live.cjs` and execute smoke tests using `checks/verify-pages.cjs <base-url>`.
-
----
-
-## File Overview
-
-| File | Description |
-| :--- | :--- |
-| `adobe_page_to_spec.py` | Main CLI extractor (HTML parser, asset downloader, spec generator) |
-| `video_map.py` | Video routing map (CDN remapping, external embeds, fallback handling) |
-| `page_routes.py` | Adobe Page ID to local path dictionary for URL rewriting |
-| `manifest.json` | Batch extraction registry |
-| `checks/compare-to-live.cjs` | Puppeteer visual & DOM parity audit script |
-| `checks/verify-pages.cjs` | Smoke-test runner for local routes (missing images, broken embeds, CSS overflow) |
+(`scripts/build_courses_from_adobe.py` is an obsolete earlier generator, kept only until cleanup; it now reads
+the same `video_map.py`.)
